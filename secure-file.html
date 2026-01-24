@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local File Encryption</title>
+    <title>Secure File Encryption (Multi-File Support)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
         .container { border: 1px solid #ccc; padding: 2rem; border-radius: 8px; }
@@ -11,16 +12,17 @@
         button { cursor: pointer; background-color: #007bff; color: white; border: none; font-weight: bold; }
         button:hover { background-color: #0056b3; }
         #status { margin-top: 15px; word-break: break-all; }
+        .note { font-size: 0.9em; color: #666; margin-top: 5px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Standalone File Encryption</h2>
-    <p>Select a file and enter a password. The file is processed entirely in your browser.</p>
+    <h2>File Encryption & Zipping</h2>
+    <p>Select one or multiple files. Multiple files will be automatically zipped before encryption.</p>
     
-    <label>1. Select File:</label>
-    <input type="file" id="fileInput">
+    <label>1. Select File(s):</label>
+    <input type="file" id="fileInput" multiple>
     
     <label>2. Enter Password:</label>
     <input type="password" id="passwordInput" placeholder="Enter a strong password">
@@ -41,19 +43,48 @@
         const statusDiv = document.getElementById('status');
 
         if (!fileInput.files.length || !password) {
-            alert("Please select a file and enter a password.");
+            alert("Please select file(s) and enter a password.");
             return;
         }
 
-        const file = fileInput.files[0];
-        const fileBuffer = await file.arrayBuffer();
-        statusDiv.textContent = isEncrypt ? "Encrypting..." : "Decrypting...";
+        statusDiv.textContent = isEncrypt ? "Processing..." : "Decrypting...";
 
         try {
+            let dataBuffer;
+            let outputFilename;
+
+            // --- 1. PREPARE DATA (Zip if multiple, or Read if single) ---
+            if (isEncrypt) {
+                if (fileInput.files.length > 1) {
+                    // MULTIPLE FILES: ZIP THEM
+                    statusDiv.textContent = "Zipping files...";
+                    const zip = new JSZip();
+                    // Add all selected files to the zip object
+                    for (const file of fileInput.files) {
+                        zip.file(file.name, file);
+                    }
+                    // Generate the zip file as a buffer
+                    dataBuffer = await zip.generateAsync({type: "arraybuffer"});
+                    outputFilename = "archive.zip.enc"; // Generic name for package
+                } else {
+                    // SINGLE FILE: READ DIRECTLY
+                    const file = fileInput.files[0];
+                    dataBuffer = await file.arrayBuffer();
+                    outputFilename = file.name + ".enc";
+                }
+            } else {
+                // DECRYPTION: Read the single encrypted file
+                const file = fileInput.files[0];
+                dataBuffer = await file.arrayBuffer();
+                // Determine output name (remove .enc)
+                outputFilename = file.name.replace(/\.enc$/, '');
+            }
+
+            // --- 2. CRYPTOGRAPHIC OPERATIONS ---
             let resultBuffer;
             
             if (isEncrypt) {
-                // ENCRYPTION FLOW
+                statusDiv.textContent = "Encrypting...";
                 const salt = window.crypto.getRandomValues(new Uint8Array(saltLength));
                 const iv = window.crypto.getRandomValues(new Uint8Array(ivLength));
                 const key = await deriveKey(password, salt);
@@ -61,21 +92,18 @@
                 const encryptedContent = await window.crypto.subtle.encrypt(
                     { name: "AES-GCM", iv: iv },
                     key,
-                    fileBuffer
+                    dataBuffer
                 );
 
-                // Pack Salt + IV + Encrypted Data together
+                // Pack Salt + IV + Encrypted Data
                 resultBuffer = new Uint8Array(salt.length + iv.length + encryptedContent.byteLength);
                 resultBuffer.set(salt, 0);
                 resultBuffer.set(iv, saltLength);
                 resultBuffer.set(new Uint8Array(encryptedContent), saltLength + ivLength);
-
-                downloadFile(resultBuffer, file.name + ".enc");
             } else {
                 // DECRYPTION FLOW
-                const data = new Uint8Array(fileBuffer);
+                const data = new Uint8Array(dataBuffer);
                 
-                // Extract Salt and IV from the beginning of the file
                 const salt = data.slice(0, saltLength);
                 const iv = data.slice(saltLength, saltLength + ivLength);
                 const encryptedContent = data.slice(saltLength + ivLength);
@@ -89,18 +117,18 @@
                 );
 
                 resultBuffer = new Uint8Array(decryptedContent);
-                // Remove ".enc" from filename if present
-                const originalName = file.name.replace(/\.enc$/, '');
-                downloadFile(resultBuffer, originalName);
             }
-            statusDiv.textContent = "Done!";
+
+            // --- 3. DOWNLOAD RESULT ---
+            downloadFile(resultBuffer, outputFilename);
+            statusDiv.textContent = "Done! Download started.";
+
         } catch (e) {
             console.error(e);
-            statusDiv.textContent = "Error: Incorrect password or corrupted file.";
+            statusDiv.textContent = "Error: Incorrect password, corrupted file, or browser memory limit reached.";
         }
     }
 
-    // Generate a cryptographic key from the password
     async function deriveKey(password, salt) {
         const enc = new TextEncoder();
         const keyMaterial = await window.crypto.subtle.importKey(
@@ -125,7 +153,6 @@
         );
     }
 
-    // Helper to trigger download
     function downloadFile(data, filename) {
         const blob = new Blob([data]);
         const url = URL.createObjectURL(blob);

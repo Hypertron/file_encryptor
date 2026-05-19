@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Encryption</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        .container { border: 1px solid #ccc; padding: 2rem; border-radius: 8px; }
+        input, button, textarea { margin-top: 10px; width: 100%; padding: 10px; box-sizing: border-box; }
+        textarea { font-family: monospace; font-size: 0.85em; resize: vertical; }
+        button { cursor: pointer; background-color: #007bff; color: white; border: none; font-weight: bold; border-radius: 4px; }
+        button:hover { background-color: #0056b3; }
+        button.decrypt-btn { background-color: #28a745; }
+        button.decrypt-btn:hover { background-color: #1e7e34; }
+        button.clear-btn { background-color: #6c757d; }
+        button.clear-btn:hover { background-color: #545b62; }
+        #status { margin-top: 15px; word-break: break-all; }
+        .note { font-size: 0.9em; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Text Encryption &amp; Decryption</h2>
+    <p>Paste plaintext to encrypt, or paste an encrypted block to decrypt. All processing happens locally in your browser.</p>
+
+    <label>1. Enter Password:</label>
+    <input type="password" id="passwordInput" placeholder="Enter a strong password">
+
+    <label>2. Input Text:</label>
+    <textarea id="inputText" rows="8" placeholder="Paste text here…"></textarea>
+
+    <button onclick="encryptText()">Encrypt</button>
+    <button class="decrypt-btn" onclick="decryptText()">Decrypt</button>
+    <button class="clear-btn" onclick="clearAll()">Clear</button>
+
+    <div id="status"></div>
+
+    <div id="outputSection" style="display:none;">
+        <label>Output:</label>
+        <textarea id="outputText" rows="10" readonly></textarea>
+        <button onclick="copyOutput()">Copy to Clipboard</button>
+        <p class="note" id="outputNote"></p>
+    </div>
+</div>
+
+<script>
+    const HEADER  = '-----BEGIN ENCRYPTED MESSAGE-----';
+    const FOOTER  = '-----END ENCRYPTED MESSAGE-----';
+    const VERSION = 'Version: TextEncrypt 1.0';
+
+    const SALT_LEN = 16; // bytes
+    const IV_LEN   = 12; // bytes
+    const ITER     = 310000;
+    const LINE_LEN = 64;
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function buf2b64(buffer) {
+        return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    }
+
+    function b642buf(b64) {
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return arr.buffer;
+    }
+
+    function wrapLines(str, width) {
+        const lines = [];
+        for (let i = 0; i < str.length; i += width) lines.push(str.slice(i, i + width));
+        return lines.join('\n');
+    }
+
+    function isEncryptedBlock(text) {
+        return text.trimStart().startsWith(HEADER);
+    }
+
+    function setStatus(msg) {
+        document.getElementById('status').textContent = msg;
+    }
+
+    // ── Key derivation ────────────────────────────────────────────────────────
+
+    async function deriveKey(password, salt) {
+        const enc = new TextEncoder();
+        const keyMaterial = await window.crypto.subtle.importKey(
+            'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
+        );
+        return window.crypto.subtle.deriveKey(
+            { name: 'PBKDF2', salt, iterations: ITER, hash: 'SHA-256' },
+            keyMaterial,
+            { name: 'AES-GCM', length: 256 },
+            false,
+            ['encrypt', 'decrypt']
+        );
+    }
+
+    // ── Encrypt ───────────────────────────────────────────────────────────────
+
+    async function encryptText() {
+        const plaintext  = document.getElementById('inputText').value;
+        const password   = document.getElementById('passwordInput').value;
+        const outputSection = document.getElementById('outputSection');
+
+        if (!plaintext.trim()) { setStatus('Please enter some text to encrypt.'); return; }
+        if (!password)         { setStatus('Please enter a password.'); return; }
+        if (isEncryptedBlock(plaintext)) { setStatus('Input already looks encrypted. Use Decrypt instead.'); return; }
+
+        setStatus('Encrypting…');
+        outputSection.style.display = 'none';
+
+        try {
+            const salt = window.crypto.getRandomValues(new Uint8Array(SALT_LEN));
+            const iv   = window.crypto.getRandomValues(new Uint8Array(IV_LEN));
+            const key  = await deriveKey(password, salt);
+
+            const enc       = new TextEncoder();
+            const encrypted = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+
+            // Pack: salt(16) | iv(12) | ciphertext
+            const packed = new Uint8Array(SALT_LEN + IV_LEN + encrypted.byteLength);
+            packed.set(salt, 0);
+            packed.set(iv, SALT_LEN);
+            packed.set(new Uint8Array(encrypted), SALT_LEN + IV_LEN);
+
+            const b64   = buf2b64(packed.buffer);
+            const block = `${HEADER}\n${VERSION}\n\n${wrapLines(b64, LINE_LEN)}\n${FOOTER}`;
+
+            showOutput(block, `Encrypted. ${plaintext.length} chars → ${block.length} chars. AES-256-GCM, PBKDF2 ${ITER.toLocaleString()} iterations.`);
+            setStatus('Done.');
+        } catch (e) {
+            console.error(e);
+            setStatus('Encryption failed: ' + e.message);
+        }
+    }
+
+    // ── Decrypt ───────────────────────────────────────────────────────────────
+
+    async function decryptText() {
+        const input    = document.getElementById('inputText').value.trim();
+        const password = document.getElementById('passwordInput').value;
+        const outputSection = document.getElementById('outputSection');
+
+        if (!input)    { setStatus('Please paste an encrypted block to decrypt.'); return; }
+        if (!password) { setStatus('Please enter a password.'); return; }
+        if (!isEncryptedBlock(input)) { setStatus('Input does not look like an encrypted block. Use Encrypt instead.'); return; }
+
+        setStatus('Decrypting…');
+        outputSection.style.display = 'none';
+
+        try {
+            // Extract base64 lines from inside the block
+            const b64Lines = [];
+            let inside = false;
+            for (const line of input.split('\n')) {
+                if (line.trim() === HEADER) { inside = true; continue; }
+                if (line.trim() === FOOTER) break;
+                if (!inside || line.startsWith('Version:') || line.trim() === '') continue;
+                b64Lines.push(line.trim());
+            }
+            if (!b64Lines.length) throw new Error('Could not parse encrypted block — check format.');
+
+            const packed = new Uint8Array(b642buf(b64Lines.join('')));
+            if (packed.length < SALT_LEN + IV_LEN + 1) throw new Error('Data too short — possibly corrupted.');
+
+            const salt       = packed.slice(0, SALT_LEN);
+            const iv         = packed.slice(SALT_LEN, SALT_LEN + IV_LEN);
+            const ciphertext = packed.slice(SALT_LEN + IV_LEN);
+            const key        = await deriveKey(password, salt);
+
+            const decrypted = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+            const plaintext = new TextDecoder().decode(decrypted);
+
+            showOutput(plaintext, `Decrypted successfully. ${plaintext.length} chars recovered. Authentication tag verified.`);
+            setStatus('Done.');
+        } catch (e) {
+            console.error(e);
+            const msg = (e.name === 'OperationError')
+                ? 'Incorrect password or corrupted data.'
+                : e.message;
+            setStatus('Decryption failed: ' + msg);
+        }
+    }
+
+    // ── UI helpers ────────────────────────────────────────────────────────────
+
+    function showOutput(text, note) {
+        const outputSection = document.getElementById('outputSection');
+        document.getElementById('outputText').value = text;
+        document.getElementById('outputNote').textContent = note;
+        outputSection.style.display = 'block';
+    }
+
+    function copyOutput() {
+        const ta = document.getElementById('outputText');
+        ta.select();
+        navigator.clipboard.writeText(ta.value).catch(() => document.execCommand('copy'));
+        setStatus('Copied to clipboard.');
+    }
+
+    function clearAll() {
+        document.getElementById('inputText').value    = '';
+        document.getElementById('passwordInput').value = '';
+        document.getElementById('outputSection').style.display = 'none';
+        document.getElementById('outputText').value   = '';
+        document.getElementById('outputNote').textContent = '';
+        setStatus('');
+    }
+</script>
+
+</body>
+</html>

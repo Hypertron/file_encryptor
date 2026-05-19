@@ -2,45 +2,192 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>Text Encryption</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
-        .container { border: 1px solid #ccc; padding: 2rem; border-radius: 8px; }
-        input, button, textarea { margin-top: 10px; width: 100%; padding: 10px; box-sizing: border-box; }
-        textarea { font-family: monospace; font-size: 0.85em; resize: vertical; }
-        button { cursor: pointer; background-color: #007bff; color: white; border: none; font-weight: bold; border-radius: 4px; }
-        button:hover { background-color: #0056b3; }
-        button.decrypt-btn { background-color: #28a745; }
-        button.decrypt-btn:hover { background-color: #1e7e34; }
-        button.clear-btn { background-color: #6c757d; }
-        button.clear-btn:hover { background-color: #545b62; }
-        #status { margin-top: 15px; word-break: break-all; }
-        .note { font-size: 0.9em; color: #666; margin-top: 5px; }
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 1rem;
+            background: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            border: 1px solid #ccc;
+            padding: 1.25rem;
+            border-radius: 8px;
+        }
+
+        h2 { margin-top: 0; }
+
+        label {
+            display: block;
+            margin-top: 1rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        /* 16px minimum prevents iOS auto-zoom on focus */
+        input[type="password"],
+        textarea {
+            margin-top: 6px;
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        textarea {
+            font-family: monospace;
+            resize: vertical;
+        }
+
+        /* Password row: input + show/hide toggle */
+        .password-row {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+        .password-row input {
+            margin-top: 0;
+            flex: 1;
+        }
+        .toggle-btn {
+            flex-shrink: 0;
+            padding: 0 14px;
+            font-size: 14px;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        /* Textarea row: textarea + paste button */
+        .textarea-wrapper {
+            position: relative;
+            margin-top: 6px;
+        }
+        .textarea-wrapper textarea {
+            margin-top: 0;
+            padding-right: 90px; /* room for paste button */
+        }
+        .paste-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 5px 10px;
+            font-size: 13px;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            line-height: 1.4;
+        }
+        .paste-btn:hover { background: #e0e0e0; }
+
+        /* Action buttons */
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        button {
+            padding: 12px 8px;
+            font-size: 15px;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+
+        .encrypt-btn  { background: #007bff; color: white; }
+        .encrypt-btn:hover  { background: #0056b3; }
+        .decrypt-btn  { background: #28a745; color: white; }
+        .decrypt-btn:hover  { background: #1e7e34; }
+        .clear-btn    { background: #6c757d; color: white; }
+        .clear-btn:hover    { background: #545b62; }
+
+        #status {
+            margin-top: 12px;
+            font-size: 0.9rem;
+            word-break: break-all;
+            min-height: 1.2em;
+        }
+        #status.error { color: #c00; }
+        #status.ok    { color: #1a7a2e; }
+
+        #outputSection { margin-top: 1rem; }
+
+        .copy-btn {
+            margin-top: 8px;
+            width: 100%;
+            padding: 12px;
+            background: #007bff;
+            color: white;
+            font-size: 15px;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .copy-btn:hover { background: #0056b3; }
+
+        .note {
+            font-size: 0.82rem;
+            color: #555;
+            margin-top: 6px;
+            line-height: 1.4;
+        }
+
+        @media (max-width: 400px) {
+            .actions { grid-template-columns: 1fr 1fr; }
+            .clear-btn { grid-column: span 2; }
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h2>Text Encryption &amp; Decryption</h2>
-    <p>Paste plaintext to encrypt, or paste an encrypted block to decrypt. All processing happens locally in your browser.</p>
+    <p style="font-size:0.9rem;color:#555;margin-top:0">Paste plaintext to encrypt, or paste an encrypted block to decrypt. All processing happens locally in your browser.</p>
 
-    <label>1. Enter Password:</label>
-    <input type="password" id="passwordInput" placeholder="Enter a strong password">
+    <label>1. Password</label>
+    <div class="password-row">
+        <input type="password" id="passwordInput" placeholder="Enter a strong password" autocomplete="current-password">
+        <button class="toggle-btn" onclick="togglePassword()" id="toggleBtn">Show</button>
+    </div>
 
-    <label>2. Input Text:</label>
-    <textarea id="inputText" rows="8" placeholder="Paste text here…"></textarea>
+    <label>2. Input Text</label>
+    <div class="textarea-wrapper">
+        <textarea id="inputText" rows="8" placeholder="Paste text here…"></textarea>
+        <button class="paste-btn" onclick="pasteFromClipboard()" title="Paste from clipboard">📋 Paste</button>
+    </div>
 
-    <button onclick="encryptText()">Encrypt</button>
-    <button class="decrypt-btn" onclick="decryptText()">Decrypt</button>
-    <button class="clear-btn" onclick="clearAll()">Clear</button>
+    <div class="actions">
+        <button class="encrypt-btn" onclick="encryptText()">Encrypt</button>
+        <button class="decrypt-btn" onclick="decryptText()">Decrypt</button>
+        <button class="clear-btn" onclick="clearAll()">Clear</button>
+    </div>
 
     <div id="status"></div>
 
-    <div id="outputSection" style="display:none;">
-        <label>Output:</label>
-        <textarea id="outputText" rows="10" readonly></textarea>
-        <button onclick="copyOutput()">Copy to Clipboard</button>
+    <div id="outputSection" style="display:none">
+        <label>Output</label>
+        <div class="textarea-wrapper">
+            <textarea id="outputText" rows="10" readonly></textarea>
+            <button class="paste-btn" onclick="copyOutput()" title="Copy to clipboard">📄 Copy</button>
+        </div>
         <p class="note" id="outputNote"></p>
     </div>
 </div>
@@ -50,12 +197,12 @@
     const FOOTER  = '-----END ENCRYPTED MESSAGE-----';
     const VERSION = 'Version: TextEncrypt 1.0';
 
-    const SALT_LEN = 16; // bytes
-    const IV_LEN   = 12; // bytes
+    const SALT_LEN = 16;
+    const IV_LEN   = 12;
     const ITER     = 310000;
     const LINE_LEN = 64;
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     function buf2b64(buffer) {
         return btoa(String.fromCharCode(...new Uint8Array(buffer)));
@@ -78,18 +225,47 @@
         return text.trimStart().startsWith(HEADER);
     }
 
-    function setStatus(msg) {
-        document.getElementById('status').textContent = msg;
+    function setStatus(msg, type) {
+        const el = document.getElementById('status');
+        el.textContent = msg;
+        el.className = type || '';
+    }
+
+    // ── Password toggle ───────────────────────────────────────────────────────
+
+    function togglePassword() {
+        const inp = document.getElementById('passwordInput');
+        const btn = document.getElementById('toggleBtn');
+        const show = inp.type === 'password';
+        inp.type = show ? 'text' : 'password';
+        btn.textContent = show ? 'Hide' : 'Show';
+    }
+
+    // ── Paste from clipboard ──────────────────────────────────────────────────
+
+    async function pasteFromClipboard() {
+        try {
+            if (!navigator.clipboard || !navigator.clipboard.readText) {
+                setStatus('Clipboard API not available — use the long-press paste menu instead.', 'error');
+                return;
+            }
+            const text = await navigator.clipboard.readText();
+            document.getElementById('inputText').value = text;
+            setStatus('Pasted from clipboard.', 'ok');
+        } catch (e) {
+            // Permission denied on some browsers/OS — guide the user
+            setStatus('Clipboard access denied. Use long-press → Paste in the text area instead.', 'error');
+        }
     }
 
     // ── Key derivation ────────────────────────────────────────────────────────
 
     async function deriveKey(password, salt) {
         const enc = new TextEncoder();
-        const keyMaterial = await window.crypto.subtle.importKey(
+        const keyMaterial = await crypto.subtle.importKey(
             'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
         );
-        return window.crypto.subtle.deriveKey(
+        return crypto.subtle.deriveKey(
             { name: 'PBKDF2', salt, iterations: ITER, hash: 'SHA-256' },
             keyMaterial,
             { name: 'AES-GCM', length: 256 },
@@ -101,26 +277,24 @@
     // ── Encrypt ───────────────────────────────────────────────────────────────
 
     async function encryptText() {
-        const plaintext  = document.getElementById('inputText').value;
-        const password   = document.getElementById('passwordInput').value;
-        const outputSection = document.getElementById('outputSection');
+        const plaintext = document.getElementById('inputText').value;
+        const password  = document.getElementById('passwordInput').value;
 
-        if (!plaintext.trim()) { setStatus('Please enter some text to encrypt.'); return; }
-        if (!password)         { setStatus('Please enter a password.'); return; }
-        if (isEncryptedBlock(plaintext)) { setStatus('Input already looks encrypted. Use Decrypt instead.'); return; }
+        if (!plaintext.trim()) { setStatus('Please enter some text to encrypt.', 'error'); return; }
+        if (!password)         { setStatus('Please enter a password.', 'error'); return; }
+        if (isEncryptedBlock(plaintext)) { setStatus('Input already looks encrypted — use Decrypt instead.', 'error'); return; }
 
         setStatus('Encrypting…');
-        outputSection.style.display = 'none';
+        document.getElementById('outputSection').style.display = 'none';
 
         try {
-            const salt = window.crypto.getRandomValues(new Uint8Array(SALT_LEN));
-            const iv   = window.crypto.getRandomValues(new Uint8Array(IV_LEN));
+            const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN));
+            const iv   = crypto.getRandomValues(new Uint8Array(IV_LEN));
             const key  = await deriveKey(password, salt);
 
             const enc       = new TextEncoder();
-            const encrypted = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
 
-            // Pack: salt(16) | iv(12) | ciphertext
             const packed = new Uint8Array(SALT_LEN + IV_LEN + encrypted.byteLength);
             packed.set(salt, 0);
             packed.set(iv, SALT_LEN);
@@ -130,10 +304,10 @@
             const block = `${HEADER}\n${VERSION}\n\n${wrapLines(b64, LINE_LEN)}\n${FOOTER}`;
 
             showOutput(block, `Encrypted. ${plaintext.length} chars → ${block.length} chars. AES-256-GCM, PBKDF2 ${ITER.toLocaleString()} iterations.`);
-            setStatus('Done.');
+            setStatus('Done.', 'ok');
         } catch (e) {
             console.error(e);
-            setStatus('Encryption failed: ' + e.message);
+            setStatus('Encryption failed: ' + e.message, 'error');
         }
     }
 
@@ -142,17 +316,15 @@
     async function decryptText() {
         const input    = document.getElementById('inputText').value.trim();
         const password = document.getElementById('passwordInput').value;
-        const outputSection = document.getElementById('outputSection');
 
-        if (!input)    { setStatus('Please paste an encrypted block to decrypt.'); return; }
-        if (!password) { setStatus('Please enter a password.'); return; }
-        if (!isEncryptedBlock(input)) { setStatus('Input does not look like an encrypted block. Use Encrypt instead.'); return; }
+        if (!input)    { setStatus('Please paste an encrypted block to decrypt.', 'error'); return; }
+        if (!password) { setStatus('Please enter a password.', 'error'); return; }
+        if (!isEncryptedBlock(input)) { setStatus('Input does not look like an encrypted block — use Encrypt instead.', 'error'); return; }
 
         setStatus('Decrypting…');
-        outputSection.style.display = 'none';
+        document.getElementById('outputSection').style.display = 'none';
 
         try {
-            // Extract base64 lines from inside the block
             const b64Lines = [];
             let inside = false;
             for (const line of input.split('\n')) {
@@ -171,41 +343,44 @@
             const ciphertext = packed.slice(SALT_LEN + IV_LEN);
             const key        = await deriveKey(password, salt);
 
-            const decrypted = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
             const plaintext = new TextDecoder().decode(decrypted);
 
             showOutput(plaintext, `Decrypted successfully. ${plaintext.length} chars recovered. Authentication tag verified.`);
-            setStatus('Done.');
+            setStatus('Done.', 'ok');
         } catch (e) {
             console.error(e);
             const msg = (e.name === 'OperationError')
                 ? 'Incorrect password or corrupted data.'
                 : e.message;
-            setStatus('Decryption failed: ' + msg);
+            setStatus('Decryption failed: ' + msg, 'error');
         }
     }
 
     // ── UI helpers ────────────────────────────────────────────────────────────
 
     function showOutput(text, note) {
-        const outputSection = document.getElementById('outputSection');
         document.getElementById('outputText').value = text;
         document.getElementById('outputNote').textContent = note;
-        outputSection.style.display = 'block';
+        document.getElementById('outputSection').style.display = 'block';
     }
 
     function copyOutput() {
         const ta = document.getElementById('outputText');
         ta.select();
-        navigator.clipboard.writeText(ta.value).catch(() => document.execCommand('copy'));
-        setStatus('Copied to clipboard.');
+        navigator.clipboard.writeText(ta.value)
+            .then(() => setStatus('Copied to clipboard.', 'ok'))
+            .catch(() => {
+                document.execCommand('copy');
+                setStatus('Copied to clipboard.', 'ok');
+            });
     }
 
     function clearAll() {
-        document.getElementById('inputText').value    = '';
+        document.getElementById('inputText').value     = '';
         document.getElementById('passwordInput').value = '';
         document.getElementById('outputSection').style.display = 'none';
-        document.getElementById('outputText').value   = '';
+        document.getElementById('outputText').value    = '';
         document.getElementById('outputNote').textContent = '';
         setStatus('');
     }
